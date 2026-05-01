@@ -1,0 +1,72 @@
+app      := "emby"
+image    := "docker.io/emby/embyserver"
+hostname := app
+port     := "8096"
+
+zfsdir               := "/tank"
+persistence          := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
+zfspool              := "tank"
+zfsdataset-app       := zfspool / app
+zfsdataset-shared    := zfspool / "shared"
+zfsdataset-downloads := zfspool / "downloads"
+
+config    := if persistence == "zfs" { zfsdir / app         } else { app + "-config" }
+shared    := if persistence == "zfs" { zfsdir / "shared"    } else { "shared" }
+downloads := if persistence == "zfs" { zfsdir / "downloads" } else { "downloads" }
+
+[private]
+default:
+    @just --list
+
+all: build setup run
+
+build:
+    podman pull {{image}}
+
+setup: mkpersistence
+
+mkpersistence:
+    @just mk{{persistence}}
+
+mkzfs:
+    zfs create {{zfsdataset-app}}
+    zfs list {{zfsdataset-shared}}    > /dev/null || zfs create {{zfsdataset-shared}}
+    zfs list {{zfsdataset-downloads}} > /dev/null || zfs create {{zfsdataset-downloads}}
+
+mkvolume:
+    podman volume create {{config}}
+    podman volume create --ignore {{shared}} {{downloads}}
+
+start: run
+
+run:
+    @# replace --publish switches with `--network host` for DLNA and WoL
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --hostname {{hostname}} --env UID=$(id -u) --env GID=$(id -g) \
+        --publish {{port}}:{{port}}/tcp \
+        --publish 8920:8920/tcp \
+        --volume {{config}}:/config:Z \
+        --volume {{shared}}:/tank/shared \
+        --volume {{downloads}}:/tank/downloads \
+        {{image}}
+
+destroy: stop rmimage rmpersistence
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}
+
+rmpersistence:
+    @just rm{{persistence}}
+
+rmzfs:
+    zfs destroy {{zfsdataset-app}}
+    #false && zfs list {{zfsdataset-shared}}    > /dev/null && zfs destroy {{zfsdataset-shared}}
+    #false && zfs list {{zfsdataset-downloads}} > /dev/null && zfs destroy {{zfsdataset-downloads}}
+
+rmvolume:
+    podman volume rm {{config}}
+    #false && podman volume rm --ignore {{shared}} {{downloads}}

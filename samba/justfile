@@ -1,0 +1,123 @@
+app      := "samba"
+image    := "samba"
+hostname := app
+
+zfsdir                 := "/tank"
+persistence            := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
+zfspool                := "tank"
+zfsdataset-app         := zfspool / app
+zfsdataset-shared      := zfspool / "shared"
+zfsdataset-home        := zfspool / "home"
+zfsdataset-timemachine := zfspool / "timemachine"
+zfsdataset-downloads   := zfspool / "downloads"
+
+config    := if persistence == "zfs" { zfsdir / app / "config" } else { app + "-config" }
+var       := if persistence == "zfs" { zfsdir / app / "var"    } else { app + "-var" }
+
+shared      := if persistence == "zfs" { zfsdir / "shared"      } else { "shared" }
+home        := if persistence == "zfs" { zfsdir / "home"        } else { "home" }
+timemachine := if persistence == "zfs" { zfsdir / "timemachine" } else { "timemachine" }
+downloads   := if persistence == "zfs" { zfsdir / "downloads"   } else { "downloads" }
+
+[private]
+default:
+    @just --list
+
+all: build setup run
+
+build:
+    podman build --tag {{app}} .
+
+setup: mkpersistence
+
+mkpersistence:
+    @just mk{{persistence}}
+    @# TODO persist /etc/passwd /etc/group /etc/shadow additions
+
+mkzfs:
+    zfs create {{zfsdataset-app}}
+    cp smb.conf {{config}}/
+    mkdir -p {{var}}/private && chmod og= {{var}}/private
+    zfs list {{zfsdataset-shared}}      > /dev/null || zfs create {{zfsdataset-shared}}
+    zfs list {{zfsdataset-home}}        > /dev/null || zfs create {{zfsdataset-home}}
+    zfs list {{zfsdataset-timemachine}} > /dev/null || zfs create {{zfsdataset-timemachine}}
+    zfs list {{zfsdataset-downloads}}   > /dev/null || zfs create {{zfsdataset-downloads}}
+
+mkvolume:
+    podman volume create {{config}}
+    podman cp smb.conf {{config}}:/
+    podman volume create {{var}}
+    podman volume create --ignore {{shared}}
+    podman volume create --ignore {{home}}
+    podman volume create --ignore {{timemachine}}
+    podman volume create --ignore {{downloads}}
+
+start: run
+
+run:
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --hostname {{hostname}} \
+        --publish 139:139 \
+        --publish 445:445 \
+        --publish 137-138:137-138/udp \
+        --volume {{config}}:/etc/samba:Z \
+        --volume {{var}}:/var/lib/{{app}}:Z \
+        --volume {{shared}}:/tank/shared \
+        --volume {{home}}:/tank/home \
+        --volume {{timemachine}}:/tank/timemachine \
+        --volume {{downloads}}:/tank/downloads \
+        {{image}}
+
+destroy: stop rmimage rmpersistence
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}
+
+rmpersistence:
+    @just rm{{persistence}}
+
+rmzfs:
+    zfs destroy {{zfsdataset-app}}
+    #false && zfs list {{zfsdataset-shared}}      > /dev/null && zfs destroy {{zfsdataset-shared}}
+    #false && zfs list {{zfsdataset-home}}        > /dev/null && zfs destroy {{zfsdataset-home}}
+    #false && zfs list {{zfsdataset-timemachine}} > /dev/null && zfs destroy {{zfsdataset-timemachine}}
+    #false && zfs list {{zfsdataset-downloads}}   > /dev/null && zfs destroy {{zfsdataset-downloads}}
+
+rmvolume:
+    podman volume rm {{config}} {{var}}
+    #false && podman volume rm --ignore {{shared}} {{home}} {{timemachine}} {{downloads}}
+
+adduser USER UID PASSWORD:
+    @echo "{{USER}}:{{UID}}:{{PASSWORD}}" | podman exec -i {{app}} smbaddusers
+
+adduser_test:
+    @just adduser johnbigboote 1002 sekrit
+
+deluser USER:
+    @echo {{USER}} | podman exec -i {{app}} smbdelusers
+
+listpdb *USER:
+    @podman exec {{app}} pdbedit -Lw {{USER}}
+
+addpdb PDBLISTING:
+    #!/bin/sh
+    set -eu
+    echo "{{PDBLISTING}}" | while IFS=: read user uid rest
+    do
+        podman exec -i {{app}} adduser -D -u $uid -G samba -g $user $user
+    done
+    echo "{{PDBLISTING}}" | podman exec -i {{app}} pdbedit -i smbpasswd -w
+
+# DO NOT COMMIT
+
+readdusers:
+    @just readduser media 1002
+    @just readduser brian 1027
+    @just readduser kazuko 1029
+
+readduser USER ID:
+    podman exec -i samba adduser -D -u {{ID}} -G samba -s /bin/true -h /tank/home/{{USER}} -g {{USER}} {{USER}}

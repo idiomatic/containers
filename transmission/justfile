@@ -1,0 +1,74 @@
+app      := "transmission"
+image    := app
+hostname := app
+network  := "container:wireguard"
+port     := "9091"
+uid      := "1000"
+gid      := "1000"
+
+zfsdir               := "/tank"
+persistence          := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
+zfspool              := "tank"
+zfsdataset-app       := zfspool / app
+zfsdataset-downloads := zfspool / "downloads"
+
+config    := if persistence == "zfs" { zfsdir / app / "config" } else { app + "-config" }
+watch     := if persistence == "zfs" { zfsdir / app / "watch"  } else { app + "-watch" }
+downloads := if persistence == "zfs" { zfsdir / "downloads"    } else { "downloads" }
+
+[private]
+default:
+    @just --list
+
+all: build setup run
+
+build:
+    podman build --tag {{app}} .
+
+setup: mkpersistence
+
+mkpersistence:
+    @just mk{{persistence}}
+
+mkzfs:
+    zfs create {{zfsdataset-app}}
+    mkdir -p {{config}} {{watch}}
+    chown -R {{uid}}:{{gid}} {{watch}}
+    chmod g+rw {{watch}}
+    cp settings.json {{config}}/
+    zfs list {{zfsdataset-downloads}} > /dev/null || ( zfs create {{zfsdataset-downloads}} && mkdir -p {{downloads}}/incomplete {{downloads}}/complete ) && chown -R {{uid}}:{{gid}} {{downloads}} && chmod -R g+rw {{downloads}}
+
+mkvolume:
+    podman volume create {{config}}
+    podman cp settings.json {{config}}:/
+    podman volume create --uid {{uid}} --gid {{gid}} {{watch}}
+    podman volume create --ignore {{downloads}}
+
+start: run
+
+run:
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --hostname {{hostname}} --network {{network}} \
+        --volume {{config}}:/config:Z \
+        --volume {{watch}}:/watch:idmap=uids={{uid}}-0-1\;gids={{gid}}-0-1 \
+        --volume {{downloads}}:/downloads:idmap=uids={{uid}}-0-1\;gids={{gid}}-0-1 \
+        {{image}}
+    @#--publish 9091:9091 --publish 51413:51413 --publish 51413:51413/udp
+
+destroy: stop rmimage rmpersistence
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}
+
+rmpersistence:
+    @just rm{{persistence}}
+
+rmzfs:
+    zfs destroy {{zfsdataset-app}}
+
+rmvolume:
+    podman volume rm {{config}}

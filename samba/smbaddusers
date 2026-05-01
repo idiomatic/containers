@@ -1,0 +1,7 @@
+#!/bin/sh
+set -euf
+while IFS=: read user uid password
+do
+    adduser -D -u $uid -G samba -s /bin/true -h /tank/home/$user -g $user $user
+    echo -e "$password\n$password" | smbpasswd -s -a $user
+done

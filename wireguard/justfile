@@ -1,0 +1,71 @@
+app      := "wireguard"
+image    := "docker.io/jordanpotter/wireguard:latest"
+hostname := app
+
+zfsdir         := "/tank"
+persistence    := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
+zfspool        := "tank"
+zfsdataset-app := zfspool / app
+
+config := if persistence == "zfs" { zfsdir / app } else { app + "-config" }
+
+tinyproxy-port    := "8888"
+transmission-port := "9091"
+
+[private]
+default:
+    @just --list
+
+all: build setup run
+
+build:
+    podman pull {{image}}
+
+setup: mkpersistence
+
+mkpersistence:
+    @just mk{{persistence}}
+
+mkzfs:
+    zfs create {{zfsdataset-app}}
+    cp wg0.conf {{config}}/
+    chmod og= {{config}}/wg0.conf
+
+mkvolume:
+    podman volume create {{config}}
+    podman cp wg0.conf {{config}}:/
+
+start: run
+
+run:
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --hostname {{hostname}} --cap-add NET_ADMIN --cap-add SYS_MODULE \
+        --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+        --sysctl net.ipv6.conf.all.disable_ipv6=0 \
+        --env LOCAL_SUBNETS=172.16.0.0/12,192.168.0.0/16 \
+        --publish {{tinyproxy-port}}:{{tinyproxy-port}} \
+        --publish {{transmission-port}}:{{transmission-port}} \
+        --volume {{config}}:/etc/wireguard:Z \
+        {{image}}
+    @echo podman run --network container:{{app}} ...
+
+test:
+	podman run --rm --network container:{{app}} docker.io/curlimages/curl -s ifconfig.io
+
+destroy: stop rmimage rmpersistence
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}
+
+rmpersistence:
+    @just rm{{persistence}}
+
+rmzfs:
+    zfs destroy {{zfsdataset-app}}
+
+rmvolume:
+    podman volume rm {{config}}

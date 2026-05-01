@@ -1,0 +1,78 @@
+app      := "jellyfin"
+image    := "docker.io/jellyfin/jellyfin:latest"
+hostname := app
+port     := "8196"
+
+zfsdir               := "/tank"
+persistence          := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
+zfspool              := "tank"
+zfsdataset-app       := zfspool / app
+zfsdataset-shared    := zfspool / "shared"
+zfsdataset-downloads := zfspool / "downloads"
+
+config    := if persistence == "zfs" { zfsdir / app / "config" } else { app + "-config" }
+cache     := if persistence == "zfs" { zfsdir / app / "cache"  } else { app + "-cache" }
+shared    := if persistence == "zfs" { zfsdir / "shared"       } else { "shared" }
+downloads := if persistence == "zfs" { zfsdir / "downloads"    } else { "downloads" }
+
+[private]
+default:
+    @just --list
+
+all: build setup run
+
+build:
+    podman pull {{image}}
+
+setup: mkpersistence
+
+mkpersistence:
+    @just mk{{persistence}}
+
+mkzfs:
+    zfs create {{zfsdataset-app}}
+    mkdir -p {{config}} {{cache}}
+    zfs list {{zfsdataset-shared}}    > /dev/null || zfs create {{zfsdataset-shared}}
+    zfs list {{zfsdataset-downloads}} > /dev/null || zfs create {{zfsdataset-downloads}}
+
+mkvolume:
+    podman volume create {{config}}
+    podman volume create {{cache}}
+    podman volume create --ignore {{shared}}
+    podman volume create --ignore {{downloads}}
+
+start: run
+
+run:
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --hostname {{hostname}} \
+        --user $(id -u):$(id -g) --userns keep-id \
+        --publish {{port}}:8096/tcp \
+        --publish 7359:7359/udp \
+        --volume {{config}}:/config:Z \
+        --volume {{cache}}:/cache:Z \
+        --volume {{shared}}:/tank/shared:ro \
+        --volume {{downloads}}:/tank/downloads:ro \
+        {{image}}
+    @#--mount type=bind,source={{shared}},destination=/media,ro=true,relabel=private
+
+destroy: stop rmimage rmpersistence
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}
+
+rmpersistence:
+    @just rm{{persistence}}
+
+rmzfs:
+    zfs destroy {{zfsdataset-app}}
+    #false && zfs list {{zfsdataset-shared}}    > /dev/null && zfs destroy {{zfsdataset-shared}}
+    #false && zfs list {{zfsdataset-downloads}} > /dev/null && zfs destroy {{zfsdataset-downloads}}
+
+rmvolume:
+    podman volume rm {{config}} {{cache}}
+    #false && podman volume rm --ignore {{shared}} {{downloads}}

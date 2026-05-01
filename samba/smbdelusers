@@ -1,0 +1,7 @@
+#!/bin/sh
+set -euf
+while IFS=: read user
+do
+	pdbedit -x -u $user
+    deluser $user
+done

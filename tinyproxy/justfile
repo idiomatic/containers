@@ -1,0 +1,35 @@
+app      := "tinyproxy"
+image    := "docker.io/vimagick/tinyproxy:latest"
+hostname := app
+port     := "8888"
+network  := "container:wireguard"
+
+[private]
+default:
+    @just --list
+
+all: setup build run
+
+build:
+    podman pull {{image}}
+
+setup:
+
+start: run
+
+run:
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --hostname {{hostname}} --network {{network}} \
+        {{image}}
+
+test PROXY:
+    podman run --rm docker.io/curlimages/curl -x http://{{PROXY}}:{{port}} -s https://ifconfig.io
+
+destroy: stop rmimage
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}

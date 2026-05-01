@@ -1,0 +1,58 @@
+app      := "avahi"
+image    := app
+hostname := app
+
+zfsdir         := "/tank"
+persistence    := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
+zfspool        := "tank"
+zfsdataset-app := zfspool / app
+
+services := if persistence == "zfs" { zfsdir / app } else { app + "-services" }
+
+[private]
+default:
+    @just --list
+
+all: build setup run
+
+build:
+    podman build --tag {{app}} .
+
+setup: mkpersistence
+
+mkpersistence:
+    @just mk{{persistence}}
+
+mkzfs:
+    zfs create {{zfsdataset-app}}
+    cp samba.service {{services}}/
+
+mkvolume:
+    podman volume create {{services}}
+    podman cp samba.service {{services}}:/
+
+start: run
+
+run:
+    podman run --detach --restart unless-stopped \
+        --name {{app}} --network host \
+        --volume {{services}}:/etc/avahi/services:Z \
+        {{image}}
+
+destroy: stop rmimage rmpersistence
+
+stop:
+    podman stop {{app}}
+    podman rm {{app}}
+
+rmimage:
+    podman rmi {{image}}
+
+rmpersistence:
+    @just rm{{persistence}}
+
+rmzfs:
+    zfs destroy {{zfsdataset-app}}
+
+rmvolume:
+    podman volume rm {{services}}

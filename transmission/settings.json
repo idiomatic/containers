@@ -1,0 +1,25 @@
+{
+    "download-dir": "/downloads/complete",
+    "lpd-enabled": false,
+    "incomplete-dir": "/downloads/incomplete",
+    "incomplete-dir-enabled": true,
+    "message-level": 2,
+    "peer-id-ttl-hours": 6,
+    "pidfile": "",
+    "preferred_transports": [
+        "utp",
+        "tcp"
+    ],
+    "proxy_url": null,
+    "rename-partial-files": true,
+    "rpc-host-whitelist": "127.0.0.1",
+    "rpc-host-whitelist-enabled": false,
+    "rpc-port": 9091,
+    "rpc-whitelist": "127.0.0.1",
+    "rpc-whitelist-enabled": false,
+    "start_paused": false,
+    "torrent_complete_verify_enabled": false,
+    "umask": "002",
+    "watch-dir": "/watch",
+    "watch-dir-enabled": true
+}

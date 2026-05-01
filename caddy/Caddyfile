@@ -1,0 +1,9 @@
+*, http://* {
+    root * /usr/share/caddy
+    file_server {
+        browse {
+	    reveal_symlinks
+	}
+        hide .DS_Store ._.DS_Store @eaDir .*
+    }
+}
