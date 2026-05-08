@@ -1,0 +1,3 @@
+[submodule "freemkv/freemkv"]
+	path = freemkv/freemkv
+	url = https://github.com/freemkv/freemkv.git

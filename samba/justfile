@@ -2,6 +2,7 @@ app      := "samba"
 image    := "samba"
 hostname := app
 
+#TODO more "zfs-y" switch
 zfsdir                 := "/tank"
 persistence            := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
 zfspool                := "tank"
@@ -45,7 +46,7 @@ mkzfs:
 
 mkvolume:
     podman volume create {{config}}
-    podman cp smb.conf {{config}}:/
+    cp smb.conf $(podman volume mount {{config}})/
     podman volume create {{var}}
     podman volume create --ignore {{shared}}
     podman volume create --ignore {{home}}
