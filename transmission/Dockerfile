@@ -1,5 +1,4 @@
 FROM docker.io/library/alpine:latest
-MAINTAINER Brian Harrison <containers@rbrian.com>
 
 RUN set -eux && \
     apk --no-cache add --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community transmission-daemon transmission-remote transmission-extra

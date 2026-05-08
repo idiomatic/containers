@@ -1,5 +1,4 @@
 FROM docker.io/library/alpine:latest
-MAINTAINER Brian Harrison <containers@rbrian.com>
 
 ENV GID=1000
 
