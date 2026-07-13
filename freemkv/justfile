@@ -1,0 +1,15 @@
+app   := "freemkv"
+image := app
+
+[private]
+default:
+    @just --list
+
+update:
+    git submodule update --remote
+
+build:
+    podman build --rm --tag {{app}} .
+
+rmimage:
+    podman rmi {{image}}

@@ -1,5 +1,5 @@
 app      := "samba"
-image    := "samba"
+image    := app
 hostname := app
 
 #TODO more "zfs-y" switch
@@ -7,18 +7,20 @@ zfsdir                 := "/tank"
 persistence            := if path_exists(zfsdir) == "true" { "zfs" } else { "volume" }
 zfspool                := "tank"
 zfsdataset-app         := zfspool / app
-zfsdataset-shared      := zfspool / "shared"
 zfsdataset-home        := zfspool / "home"
 zfsdataset-timemachine := zfspool / "timemachine"
+zfsdataset-shared      := zfspool / "shared"
 zfsdataset-downloads   := zfspool / "downloads"
+zfsdataset-review      := zfspool / "review"
 
 config    := if persistence == "zfs" { zfsdir / app / "config" } else { app + "-config" }
 var       := if persistence == "zfs" { zfsdir / app / "var"    } else { app + "-var" }
 
-shared      := if persistence == "zfs" { zfsdir / "shared"      } else { "shared" }
 home        := if persistence == "zfs" { zfsdir / "home"        } else { "home" }
 timemachine := if persistence == "zfs" { zfsdir / "timemachine" } else { "timemachine" }
+shared      := if persistence == "zfs" { zfsdir / "shared"      } else { "shared" }
 downloads   := if persistence == "zfs" { zfsdir / "downloads"   } else { "downloads" }
+review      := if persistence == "zfs" { zfsdir / "review"      } else { "review" }
 
 [private]
 default:
@@ -39,19 +41,21 @@ mkzfs:
     zfs create {{zfsdataset-app}}
     cp smb.conf {{config}}/
     mkdir -p {{var}}/private && chmod og= {{var}}/private
-    zfs list {{zfsdataset-shared}}      > /dev/null || zfs create {{zfsdataset-shared}}
     zfs list {{zfsdataset-home}}        > /dev/null || zfs create {{zfsdataset-home}}
     zfs list {{zfsdataset-timemachine}} > /dev/null || zfs create {{zfsdataset-timemachine}}
+    zfs list {{zfsdataset-shared}}      > /dev/null || zfs create {{zfsdataset-shared}}
     zfs list {{zfsdataset-downloads}}   > /dev/null || zfs create {{zfsdataset-downloads}}
+    zfs list {{zfsdataset-review}}      > /dev/null || zfs create {{zfsdataset-review}}
 
 mkvolume:
     podman volume create {{config}}
     cp smb.conf $(podman volume mount {{config}})/
     podman volume create {{var}}
-    podman volume create --ignore {{shared}}
     podman volume create --ignore {{home}}
     podman volume create --ignore {{timemachine}}
+    podman volume create --ignore {{shared}}
     podman volume create --ignore {{downloads}}
+    podman volume create --ignore {{review}}
 
 start: run
 
@@ -63,10 +67,11 @@ run:
         --publish 137-138:137-138/udp \
         --volume {{config}}:/etc/samba:Z \
         --volume {{var}}:/var/lib/{{app}}:Z \
-        --volume {{shared}}:/tank/shared \
         --volume {{home}}:/tank/home \
         --volume {{timemachine}}:/tank/timemachine \
+        --volume {{shared}}:/tank/shared \
         --volume {{downloads}}:/tank/downloads \
+        --volume {{review}}:/tank/review \
         {{image}}
 
 destroy: stop rmimage rmpersistence
@@ -83,10 +88,11 @@ rmpersistence:
 
 rmzfs:
     zfs destroy {{zfsdataset-app}}
-    #false && zfs list {{zfsdataset-shared}}      > /dev/null && zfs destroy {{zfsdataset-shared}}
     #false && zfs list {{zfsdataset-home}}        > /dev/null && zfs destroy {{zfsdataset-home}}
     #false && zfs list {{zfsdataset-timemachine}} > /dev/null && zfs destroy {{zfsdataset-timemachine}}
+    #false && zfs list {{zfsdataset-shared}}      > /dev/null && zfs destroy {{zfsdataset-shared}}
     #false && zfs list {{zfsdataset-downloads}}   > /dev/null && zfs destroy {{zfsdataset-downloads}}
+    #false && zfs list {{zfsdataset-review}}      > /dev/null && zfs destroy {{zfsdataset-review}}
 
 rmvolume:
     podman volume rm {{config}} {{var}}
